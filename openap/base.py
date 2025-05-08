@@ -44,6 +44,9 @@ class ThrustBase(object):
 
         if not hasattr(self, "aero"):
             self.aero = importlib.import_module("openap").aero
+        
+        if not hasattr(self, "Drag"):
+            self.Drag = importlib.import_module("openap.drag").Drag
 
         self.ac = ac.upper()
 

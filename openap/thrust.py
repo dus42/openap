@@ -29,7 +29,7 @@ class Thrust(ThrustBase):
 
         aircraft = prop.aircraft(ac, **kwargs)
         force_engine = kwargs.get("force_engine", False)
-
+        self.drag = self.Drag(ac, **kwargs)
         if eng is None:
             eng = aircraft["engine"]["default"]
 
@@ -235,3 +235,49 @@ class Thrust(ThrustBase):
         """
         F = 0.07 * self.takeoff(tas, alt, dT)
         return F
+    
+    @ndarrayconvert
+    def enroute(self, mass, tas, alt, vs=0, acc=0, dT=0, limit=True):
+        """Compute the thrust during climb, cruise, or descent.
+
+        The net thrust is first estimated based on the dynamic equation.
+        Then FuelFlow.at_thrust() is called to compted the thrust. Assuming
+        no flap deflection and no landing gear extended.
+
+        Args:
+            mass (int or ndarray): Aircraft mass (unit: kg).
+            tas (int or ndarray): Aircraft true airspeed (unit: kt).
+            alt (int or ndarray): Aircraft altitude (unit: ft).
+            vs (float or ndarray): Vertical rate (unit: ft/min). Default is 0.
+            acc (float or ndarray): acceleration (unit: m/s^2). Default is 0.
+            dT (float or ndarray): Temperature shift (unit: K or degC),default = 0
+        Returns:
+            float: Fuel flow (unit: kg/s).
+
+        """
+        D = self.drag.clean(mass=mass, tas=tas, alt=alt, vs=vs, dT = dT)
+
+        gamma = self.sci.arctan2(vs * self.aero.fpm, tas * self.aero.kts)
+
+        if limit:
+            # limit gamma to -10 to 10 degrees (0.175 radians)
+            gamma = self.sci.where(gamma < -0.175, -0.175, gamma)
+            gamma = self.sci.where(gamma > 0.175, 0.175, gamma)
+
+            # limit acc to 5 m/s^2
+            acc = self.sci.where(acc < -5, -5, acc)
+            acc = self.sci.where(acc > 5, 5, acc)
+
+        T = D + mass * 9.81 * self.sci.sin(gamma) + mass * acc
+
+        if limit:
+            T_max = self.climb(tas=tas, alt=alt, roc=0, dT = dT)
+            T_idle = self.descent_idle(tas=tas, alt=alt, dT = dT)
+
+            # below idle thrust (with margin of 20%)
+            T = self.sci.where(T < T_idle* 0.8, T_idle* 0.8, T)
+
+            # outside performance boundary (with margin of 20%)
+            T = self.sci.where(T > 1.2 * T_max, 1.2 * T_max, T)
+
+        return T

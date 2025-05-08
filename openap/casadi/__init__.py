@@ -22,7 +22,10 @@ class Drag(drag.Drag, metaclass=RemoveDecoratorMeta):
 
 
 class Thrust(thrust.Thrust, metaclass=RemoveDecoratorMeta):
-    pass
+    def __init__(self, ac, eng=None, **kwargs):
+        self.Drag = Drag
+        super(Thrust, self).__init__(ac=ac, eng=eng, **kwargs)
+
 
 
 class FuelFlow(fuel.FuelFlow, metaclass=RemoveDecoratorMeta):
