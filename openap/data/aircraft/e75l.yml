@@ -42,7 +42,7 @@ engine:
   type: turbofan
   mount: wing
   number: 2
-  default: CF34-8E6
+  default: CF34-8E5
   options:
     - CF34-8E5
     - CF34-8E6

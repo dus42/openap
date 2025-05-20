@@ -42,7 +42,7 @@ engine:
   type: turbofan
   mount: wing
   number: 2
-  default: CFM56-5B9
+  default: CFM56-5B9/3
   options:
     A318-111: CFM56-5B8
     A318-112: CFM56-5B9
