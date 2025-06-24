@@ -97,8 +97,8 @@ class Drag(DragBase):
         return cl, qS
 
     @ndarrayconvert
-    def _calc_drag(self, mass, tas, alt, cd0, k, vs):
-        cl, qS = self._cl(mass, tas, alt, vs)
+    def _calc_drag(self, mass, tas, alt, cd0, k, vs, dT=0):
+        cl, qS = self._cl(mass, tas, alt, vs, dT)
         cd = cd0 + k * cl**2
         D = cd * qS
         return D
@@ -123,7 +123,7 @@ class Drag(DragBase):
 
         if self.wave_drag:
             mach = self.aero.tas2mach(tas * self.aero.kts, alt * self.aero.ft, dT)
-            cl, qS = self._cl(mass, tas, alt, dT)
+            cl, qS = self._cl(mass, tas, alt, dT=dT)
 
             sweep = self.aircraft["wing"]["sweep"] * self.sci.pi / 180
             tc = self.aircraft["wing"]["t/c"]
@@ -150,11 +150,11 @@ class Drag(DragBase):
 
         cd0 = cd0 + dCdw
 
-        D = self._calc_drag(mass, tas, alt, cd0, k, vs)
+        D = self._calc_drag(mass, tas, alt, cd0, k, vs, dT)
         return D
 
     @ndarrayconvert
-    def nonclean(self, mass, tas, alt, flap_angle, vs=0, landing_gear=False):
+    def nonclean(self, mass, tas, alt, flap_angle, vs=0, dT=0, landing_gear=False):
         """Compute drag at at non-clean configuration.
 
         Args:
@@ -163,6 +163,7 @@ class Drag(DragBase):
             alt (int or ndarray): Altitude (unit: ft).
             flap_angle (int or ndarray): flap deflection angle (unit: degree).
             vs (float or ndarray): Vertical rate (unit: feet/min). Defaults to 0.
+            dT (float or ndarray): Temperature shift (unit: K or degC),default = 0.
             landing_gear (bool): Is landing gear extended? Defaults to False.
 
         Returns:
@@ -212,5 +213,5 @@ class Drag(DragBase):
         ar = self.aircraft["wing"]["span"] ** 2 / self.aircraft["wing"]["area"]
         k_total = 1 / (1 / k + self.sci.pi * ar * delta_e_flap)
 
-        D = self._calc_drag(mass, tas, alt, cd0_total, k_total, vs)
+        D = self._calc_drag(mass, tas, alt, cd0_total, k_total, vs, dT)
         return D
