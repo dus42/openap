@@ -108,7 +108,7 @@ class FuelFlow(FuelFlowBase):
         ratio = (
             (
                 self.sci.log(1 + self.sci.exp(50 * (ratio - 0.03)))
-                - self.sci.log(1 + self.sci.exp(50 * (ratio - 1.2)))
+                - self.sci.log(1 + self.sci.exp(45 * (ratio - 1.2)))
             )
             / (self.sci.log(1 + self.sci.exp(50)))
         ) + 0.03
@@ -118,7 +118,7 @@ class FuelFlow(FuelFlowBase):
         return fuelflow
 
     @ndarrayconvert
-    def takeoff(self, tas, alt=None, throttle=1):
+    def takeoff(self, tas, alt=None, throttle=1, dT=0):
         """Compute the fuel flow at takeoff.
 
         The net thrust is first estimated based on the maximum thrust model
@@ -136,7 +136,7 @@ class FuelFlow(FuelFlowBase):
             float: Fuel flow (unit: kg/s).
 
         """
-        Tmax = self.thrust.takeoff(tas=tas, alt=alt)
+        Tmax = self.thrust.takeoff(tas=tas, alt=alt, dT=dT)
         fuelflow = throttle * self.at_thrust(Tmax)
         return fuelflow
 
