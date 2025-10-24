@@ -44,7 +44,8 @@ def atmos(h, dT=0):
 
     T0_ = T0 + dT
     T = 0.65 * np.log(1 + np.exp(-10 * (h / 1000 - 11))) + 216.65 + dT
-    rho = rho0 * ((T0_ + beta * h) / T0_) ** 4.2559
+    rho0_ = p0 / (R * T0_)
+    rho = rho0_ * ((T0_ + beta * h) / T0_) ** 4.2559
     p = rho * R * T
     return p, rho, T
 
