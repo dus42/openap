@@ -61,9 +61,11 @@ def atmos(h, dT=0):
     T0_shift = T0 + dT
 
     rho0_ = p0 / (R * T0_shift)
-    T = np.maximum(T0_shift + beta * h, 216.65 + dT)
+    htrop = 11000 + 1000 * dT / 6.5
+    Ttrop = T0_shift + beta * htrop
+    T = np.maximum(T0_shift + beta * h, Ttrop)
     rhotrop = rho0_ * (T / T0_shift) ** 4.2559
-    dhstrat = np.maximum(0.0, h - 11000)
+    dhstrat = np.maximum(0.0, h - htrop)
     rho = rhotrop * np.exp(-dhstrat * g0 / R / (216.65 + dT))
     p = rho * R * T
     return p, rho, T
