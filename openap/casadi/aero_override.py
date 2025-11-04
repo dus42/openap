@@ -43,7 +43,7 @@ def atmos(h, dT=0):
     dT = casadi.fmax(-25, casadi.fmin(15, dT))
 
     T0_ = T0 + dT
-    htrop = 11000 + 1000 * dT / 6.5
+    htrop = 11000  # + 1000 * dT / 6.5
     Ttrop = T0_ + beta * htrop
     T = 0.65 * np.log(1 + np.exp(-10 * (h - htrop) / 1000)) + Ttrop
     rho0_ = p0 / (R * T0_)
