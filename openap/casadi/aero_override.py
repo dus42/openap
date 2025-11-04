@@ -40,7 +40,7 @@ def atmos(h, dT=0):
             Air pressure (Pa), density (kg/m3), and temperature (K).
 
     """
-    dT = casadi.fmax(-25, casadi.fmin(15, dT))
+    dT = casadi.fmax(-20, casadi.fmin(20, dT))
 
     T0_ = T0 + dT
     htrop = 11000  # + 1000 * dT / 6.5

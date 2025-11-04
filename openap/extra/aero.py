@@ -57,7 +57,7 @@ def atmos(h, dT=0):
             Air pressure (Pa), density (kg/m3), and temperature (K).
 
     """
-    dT = np.maximum(-25, np.minimum(dT, 15))
+    dT = np.maximum(-20, np.minimum(dT, 20))
     T0_shift = T0 + dT
 
     rho0_ = p0 / (R * T0_shift)
