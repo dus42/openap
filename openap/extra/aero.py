@@ -59,9 +59,10 @@ def atmos(h, dT=0):
     """
     dT = np.maximum(-20, np.minimum(dT, 20))
     T0_shift = T0 + dT
-
+    p_trop_isa = 22631.91
+    htrop = ((p_trop_isa / p0) ** (1 / 5.2559) * T0_shift - T0_shift) / beta
     rho0_ = p0 / (R * T0_shift)
-    htrop = 11000  # + 1000 * dT / 6.5
+    # htrop = 11000  # + 1000 * dT / 6.5
     Ttrop = T0_shift + beta * htrop
     T = np.maximum(T0_shift + beta * h, Ttrop)
     rhotrop = rho0_ * (T / T0_shift) ** 4.2559
