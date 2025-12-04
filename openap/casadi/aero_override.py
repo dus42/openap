@@ -45,7 +45,6 @@ def atmos(h, dT=0):
     T0_ = T0 + dT
     p_trop_isa = 22631.91
     htrop = 11000 - R * dT / g0 * np.log(p_trop_isa / p0)
-    # htrop = 11000
     Ttrop = T0_ + beta * htrop
     T = 0.65 * np.log(1 + np.exp(-10 * (h - htrop) / 1000)) + Ttrop
     rho0_ = p0 / (R * T0_)

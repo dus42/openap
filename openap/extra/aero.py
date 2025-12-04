@@ -46,7 +46,7 @@ a0 = 340.293988  # m/s, sea level speed of sound ISA, sqrt(gamma*R*T0)
 
 
 def atmos(h, dT=0):
-    """Compute press, density and temperature at a given altitude.
+    """Compute pressure, density and temperature at a given altitude.
 
     Args:
         h (float or ndarray): Altitude (in meters).
