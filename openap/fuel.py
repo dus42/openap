@@ -136,6 +136,7 @@ class FuelFlow(FuelFlowBase):
         tas: Numeric,
         alt: Optional[Numeric] = None,
         throttle: Numeric = 1,
+        dT: Numeric=1,
     ) -> Numeric:
         """Compute the fuel flow at takeoff.
 
@@ -153,7 +154,7 @@ class FuelFlow(FuelFlowBase):
             Fuel flow (unit: kg/s).
 
         """
-        Tmax = self.thrust.takeoff(tas=tas, alt=alt)
+        Tmax = self.thrust.takeoff(tas=tas, alt=alt, dT=dT)
         fuelflow = throttle * self.at_thrust(Tmax)
         return fuelflow
 
