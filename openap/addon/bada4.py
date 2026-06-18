@@ -63,6 +63,7 @@ class Drag(base.DragBase):
         super().__init__(ac, **kwargs)
 
         self.ac = ac.upper()
+        self.smooth = kwargs.get("smooth", False)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
@@ -104,7 +105,14 @@ class Drag(base.DragBase):
         mach = self.aero.tas2mach(v, h, dT=dT)
 
         mach_base = self.mach_max - 0.01
-        divergent = self.backend.maximum((mach - mach_base) / 0.01, 0)
+        if self.smooth:
+            divergent = self.backend.smooth_max(
+                (mach - mach_base) / 0.01,
+                0,
+                softness=1e-3,
+            )
+        else:
+            divergent = self.backend.maximum((mach - mach_base) / 0.01, 0)
 
         base = self._cd_params_base(mach)
         at_base = self._cd_params_base(mach_base)
@@ -115,9 +123,18 @@ class Drag(base.DragBase):
             divergent_value = at_base[name] + divergent**1.5 * (
                 at_max[name] - at_base[name]
             )
-            params[name] = self.backend.where(
-                mach < self.mach_max, base[name], divergent_value
-            )
+            if self.smooth:
+                params[name] = self.backend.smooth_switch(
+                    mach,
+                    self.mach_max,
+                    base[name],
+                    divergent_value,
+                    softness=1e-3,
+                )
+            else:
+                params[name] = self.backend.where(
+                    mach < self.mach_max, base[name], divergent_value
+                )
         return params
 
     @ndarrayconvert(column=True)
@@ -132,10 +149,22 @@ class Drag(base.DragBase):
         cd_mach_base = self._cd_base(cl, mach_base)
 
         divergent = (mach - mach_base) / 0.01
-        divergent = self.backend.maximum(divergent, 0)
+        if self.smooth:
+            divergent = self.backend.smooth_max(divergent, 0, softness=1e-3)
+        else:
+            divergent = self.backend.maximum(divergent, 0)
         cd_crit = cd_mach_base + divergent**1.5 * (cd_mach_max - cd_mach_base)
 
-        cd = self.backend.where(mach < self.mach_max, cd, cd_crit)
+        if self.smooth:
+            cd = self.backend.smooth_switch(
+                mach,
+                self.mach_max,
+                cd,
+                cd_crit,
+                softness=1e-3,
+            )
+        else:
+            cd = self.backend.where(mach < self.mach_max, cd, cd_crit)
 
         return cd
 
@@ -148,7 +177,11 @@ class Drag(base.DragBase):
         qS = 0.5 * rho * v**2 * self.S
         L = mass * self.aero.g0
 
-        cl = L / self.backend.maximum(qS, 1e-3)  # avoid zero division
+        if self.smooth:
+            qS_safe = self.backend.smooth_max(qS, 1e-3, softness=1e-4)
+        else:
+            qS_safe = self.backend.maximum(qS, 1e-3)
+        cl = L / qS_safe  # avoid zero division
 
         return cl, qS
 
@@ -190,6 +223,7 @@ class Thrust(base.ThrustBase):
         """
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
+        self.smooth = kwargs.get("smooth", False)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
@@ -258,7 +292,16 @@ class Thrust(base.ThrustBase):
             temp_delta_T = _poly2(
                 self.c_[rating], (9, 5), temp_terms, mach_terms_5
             )
-            delta_T = b.where(dT <= self.kink[rating], flat_delta_T, temp_delta_T)
+            if self.smooth:
+                delta_T = b.smooth_switch(
+                    dT,
+                    self.kink[rating],
+                    flat_delta_T,
+                    temp_delta_T,
+                    softness=0.1,
+                )
+            else:
+                delta_T = b.where(dT <= self.kink[rating], flat_delta_T, temp_delta_T)
 
             delta_T_terms = [delta_T**i for i in range(6)]
             cT = _poly2(self.a_, (6, 6), delta_T_terms, mach_terms_6)
@@ -369,8 +412,9 @@ class FuelFlow(base.FuelFlowBase):
         """
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
-        self.thrust = Thrust(ac, bada_path, backend=self.backend)
-        self.drag = Drag(ac, bada_path, backend=self.backend)
+        self.smooth = kwargs.get("smooth", False)
+        self.thrust = Thrust(ac, bada_path, backend=self.backend, smooth=self.smooth)
+        self.drag = Drag(ac, bada_path, backend=self.backend, smooth=self.smooth)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
@@ -459,6 +503,19 @@ class FuelFlow(base.FuelFlowBase):
         fuel_flow_non_idle = self._calc_fuel(mass, delta, theta, cF_gen)
         fuel_flow_idle = self.idle(mass, tas, alt, dT=dT)
 
-        fuel_flow = self.backend.where(vs < -250, fuel_flow_idle, fuel_flow_non_idle)
+        if self.smooth:
+            fuel_flow = self.backend.smooth_switch(
+                vs,
+                -250.0,
+                fuel_flow_idle,
+                fuel_flow_non_idle,
+                softness=10.0,
+            )
+        else:
+            fuel_flow = self.backend.where(
+                vs < -250,
+                fuel_flow_idle,
+                fuel_flow_non_idle,
+            )
 
         return fuel_flow

@@ -4,12 +4,11 @@ This module tests that all three backends (NumPy, CasADi, JAX) work
 correctly and produce consistent results.
 """
 
-import numpy as np
 import pytest
 
+import numpy as np
 from openap import Aero, Drag, Emission, FuelFlow, Thrust
 from openap.backends import CasadiBackend, JaxBackend, NumpyBackend
-
 
 # Expected values computed with NumPy backend (reference)
 EXPECTED = {
@@ -126,6 +125,34 @@ class TestNumpyBackend:
         assert T.shape == (3,)
         np.testing.assert_allclose(T, EXPECTED["thrust_array"], rtol=RTOL)
 
+    def test_smooth_helpers(self):
+        """Test differentiable clamp/switch helper values."""
+        backend = NumpyBackend()
+
+        assert backend.smooth_max(10.0, 0.0, softness=0.1) == pytest.approx(
+            10.0, rel=1e-4
+        )
+        assert backend.smooth_min(10.0, 0.0, softness=0.1) == pytest.approx(
+            0.0, abs=1e-3
+        )
+        assert backend.smooth_clip(2.0, 0.0, 1.0, softness=0.01) == pytest.approx(
+            1.0, rel=1e-4
+        )
+        assert backend.smooth_switch(
+            -100.0,
+            0.0,
+            left=2.0,
+            right=4.0,
+            softness=1.0,
+        ) == pytest.approx(2.0, rel=1e-4)
+        assert backend.smooth_switch(
+            100.0,
+            0.0,
+            left=2.0,
+            right=4.0,
+            softness=1.0,
+        ) == pytest.approx(4.0, rel=1e-4)
+
 
 class TestCasadiBackend:
     """Tests for CasadiBackend."""
@@ -220,6 +247,19 @@ class TestCasadiBackend:
         # dT/dtas should be negative (thrust decreases with speed at takeoff)
         assert float(result) < 0
         assert float(result) == pytest.approx(-276.19, rel=0.01)
+
+    def test_smooth_helpers_are_symbolic(self, casadi):
+        """Test smooth helpers support CasADi symbolic derivatives."""
+        backend = CasadiBackend()
+        x = casadi.SX.sym("x")
+        expr = backend.smooth_max(x, 0.0, softness=0.5)
+        jac = casadi.jacobian(expr, x)
+        f = casadi.Function("f", [x], [expr, jac])
+
+        value, derivative = f(0.0)
+
+        assert float(value) == pytest.approx(0.25)
+        assert float(derivative) == pytest.approx(0.5)
 
     def test_aero_symbolic(self, casadi):
         """Test aero functions with symbolic inputs."""
@@ -501,7 +541,7 @@ class TestConvenienceModules:
         """Test openap.casadi convenience module."""
         casadi = pytest.importorskip("casadi")
 
-        from openap.casadi import Drag, Emission, FuelFlow, Thrust, aero, prop
+        from openap.casadi import Thrust, aero, prop
 
         # Check classes use CasadiBackend
         thrust = Thrust("A320")
@@ -526,7 +566,7 @@ class TestConvenienceModules:
         jax = pytest.importorskip("jax")
         jnp = jax.numpy
 
-        from openap.jax import Drag, Emission, FuelFlow, Thrust, aero
+        from openap.jax import Thrust, aero
 
         # Check classes use JaxBackend
         thrust = Thrust("A320")

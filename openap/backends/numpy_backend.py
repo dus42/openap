@@ -85,6 +85,36 @@ class NumpyBackend:
     def clip(x: Any, min_val: Any, max_val: Any) -> Any:
         return np.clip(x, min_val, max_val)
 
+    @staticmethod
+    def smooth_max(x: Any, y: Any, softness: float = 1.0) -> Any:
+        delta = x - y
+        return 0.5 * (x + y + np.sqrt(delta**2 + softness**2))
+
+    @staticmethod
+    def smooth_min(x: Any, y: Any, softness: float = 1.0) -> Any:
+        delta = x - y
+        return 0.5 * (x + y - np.sqrt(delta**2 + softness**2))
+
+    def smooth_clip(
+        self, x: Any, min_val: Any, max_val: Any, softness: float = 1.0
+    ) -> Any:
+        return self.smooth_min(
+            self.smooth_max(x, min_val, softness),
+            max_val,
+            softness,
+        )
+
+    @staticmethod
+    def smooth_switch(
+        selector: Any,
+        threshold: Any,
+        left: Any,
+        right: Any,
+        softness: float = 1.0,
+    ) -> Any:
+        weight = 0.5 * (1 + np.tanh((selector - threshold) / (2 * softness)))
+        return left + weight * (right - left)
+
     # --- Interpolation ---
 
     @staticmethod

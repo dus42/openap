@@ -619,3 +619,33 @@ def test_bada4_fuel_enroute_supports_casadi_symbolics(casadi, bada4_path):
     )
 
     assert result == pytest.approx(numeric)
+
+
+def test_bada4_smooth_fuel_switch_reduces_idle_discontinuity(bada4_path):
+    hard = bada4.FuelFlow("A320-TEST", bada4_path)
+    smooth = bada4.FuelFlow("A320-TEST", bada4_path, smooth=True)
+
+    hard_below = hard.enroute(mass=60000.0, tas=300.0, alt=12000.0, vs=-251.0)
+    hard_above = hard.enroute(mass=60000.0, tas=300.0, alt=12000.0, vs=-249.0)
+    smooth_below = smooth.enroute(mass=60000.0, tas=300.0, alt=12000.0, vs=-251.0)
+    smooth_above = smooth.enroute(mass=60000.0, tas=300.0, alt=12000.0, vs=-249.0)
+
+    assert abs(smooth_above - smooth_below) < abs(hard_above - hard_below)
+
+
+def test_bada4_smooth_fuel_switch_supports_symbolic_derivative(casadi, bada4_path):
+    fuel_flow = bada4.FuelFlow(
+        "A320-TEST",
+        bada4_path,
+        backend=CasadiBackend(),
+        smooth=True,
+    )
+    vs = casadi.SX.sym("vs")
+    ff = fuel_flow.enroute(60000.0, 300.0, 12000.0, vs)
+    jac = casadi.jacobian(ff, vs)
+    f = casadi.Function("f", [vs], [ff, jac])
+
+    value, derivative = f(-250.0)
+
+    assert float(value) > 0
+    assert np.isfinite(float(derivative))

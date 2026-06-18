@@ -274,6 +274,7 @@ class Drag(base.DragBase):
     def __init__(self, ac: str, bada_path: str, model=None, **kwargs):
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
+        self.smooth = kwargs.get("smooth", False)
         if not model:
             model = load_bada3(ac, bada_path)
         self.S = model["wing"]["area"]
@@ -331,7 +332,11 @@ class Drag(base.DragBase):
         # calculate total lift
         qS = 0.5 * rho * v**2 * self.S
         L = mass * self.aero.g0
-        cl = L / self.backend.maximum(qS, 1e-3)  # avoid zero division
+        if self.smooth:
+            qS_safe = self.backend.smooth_max(qS, 1e-3, softness=1e-4)
+        else:
+            qS_safe = self.backend.maximum(qS, 1e-3)
+        cl = L / qS_safe  # avoid zero division
 
         return cl, qS
 
@@ -401,6 +406,7 @@ class Thrust(base.ThrustBase):
     def __init__(self, ac: str, bada_path: str, model=None, **kwargs):
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
+        self.smooth = kwargs.get("smooth", False)
         if not model:
             model = load_bada3(ac, bada_path)
         self.engine_type = model["engine"]["type"]
@@ -451,8 +457,12 @@ class Thrust(base.ThrustBase):
         # eq. (3.7.4 - 3.7.7)
         dT_eff = dT - self.ct[3]
         b = self.backend
-        c_tc5 = b.maximum(self.ct[4], 0.0)
-        dT_lim = b.maximum(0.0, b.minimum(c_tc5 * dT_eff, 0.4))
+        if self.smooth:
+            c_tc5 = b.smooth_max(self.ct[4], 0.0, softness=1e-4)
+            dT_lim = b.smooth_clip(c_tc5 * dT_eff, 0.0, 0.4, softness=1e-3)
+        else:
+            c_tc5 = b.maximum(self.ct[4], 0.0)
+            dT_lim = b.maximum(0.0, b.minimum(c_tc5 * dT_eff, 0.4))
         thr_mcl = thr_isa * (1 - dT_lim)
         return thr_mcl
 
@@ -514,9 +524,18 @@ class Thrust(base.ThrustBase):
             ctdes = self.ctdesapp
         else:
             ctdes = self.ctdesld
-        thr_des = self.backend.where(
-            alt > self.hpdes, self.ctdeshigh * thr_cl_max, ctdes * thr_cl_max
-        )
+        high = self.ctdeshigh * thr_cl_max
+        low = ctdes * thr_cl_max
+        if self.smooth:
+            thr_des = self.backend.smooth_switch(
+                alt,
+                self.hpdes,
+                low,
+                high,
+                softness=100.0,
+            )
+        else:
+            thr_des = self.backend.where(alt > self.hpdes, high, low)
         return thr_des
 
 
@@ -526,10 +545,23 @@ class FuelFlow(base.FuelFlowBase):
     def __init__(self, ac: str, bada_path: Optional[str] = None, model=None, **kwargs):
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
+        self.smooth = kwargs.get("smooth", False)
         if not model:
             model = load_bada3(ac, bada_path)
-        self.thrust = Thrust(ac, bada_path, model=model, backend=self.backend)
-        self.drag = Drag(ac, bada_path, model=model, backend=self.backend)
+        self.thrust = Thrust(
+            ac,
+            bada_path,
+            model=model,
+            backend=self.backend,
+            smooth=self.smooth,
+        )
+        self.drag = Drag(
+            ac,
+            bada_path,
+            model=model,
+            backend=self.backend,
+            smooth=self.smooth,
+        )
         # load parameters from BADA3
         self.engine_type = model["engine"]["type"]
         self.cf1 = model["Cf"][0]
@@ -559,10 +591,16 @@ class FuelFlow(base.FuelFlowBase):
         D = self.drag.clean(mass, tas, alt, vs, dT=dT)
 
         # thrust is equal to drag, but not larger than climb thrust
-        T = self.backend.minimum(
-            D + mass * self.aero.g0 * self.backend.sin(gamma),
-            self.thrust.climb(tas, alt, dT=dT),
-        )
+        required_thrust = D + mass * self.aero.g0 * self.backend.sin(gamma)
+        climb_thrust = self.thrust.climb(tas, alt, dT=dT)
+        if self.smooth:
+            T = self.backend.smooth_min(
+                required_thrust,
+                climb_thrust,
+                softness=500.0,
+            )
+        else:
+            T = self.backend.minimum(required_thrust, climb_thrust)
 
         # calculate nominal fuel flow depending on engine_type
         if self.engine_type == "turbofan":
@@ -577,7 +615,11 @@ class FuelFlow(base.FuelFlowBase):
             raise ValueError("Unknown engine type.")
 
         # nominal must be at least idle
-        f_nom = self.backend.maximum(f_nom, self.idle(mass, tas, alt, vs))
+        f_idle = self.idle(mass, tas, alt, vs)
+        if self.smooth:
+            f_nom = self.backend.smooth_max(f_nom, f_idle, softness=1e-3)
+        else:
+            f_nom = self.backend.maximum(f_nom, f_idle)
         return f_nom / 60.0  # conversion [kg/min] -> [kg/s]
 
     @ndarrayconvert(column=True)
@@ -663,5 +705,8 @@ class FuelFlow(base.FuelFlowBase):
             )
         f_nom = self.nominal(mass, tas, alt, vs, dT=dT)  # [kg/s]
         f_min = self.idle(mass, tas, alt, vs)  # [kg/s]
-        f_ap = self.backend.maximum(f_nom, f_min)
+        if self.smooth:
+            f_ap = self.backend.smooth_max(f_nom, f_min, softness=1e-4)
+        else:
+            f_ap = self.backend.maximum(f_nom, f_min)
         return f_ap

@@ -87,6 +87,31 @@ class MathBackend(Protocol):
         """Clip values to range [min_val, max_val]."""
         ...
 
+    def smooth_max(self, x: Any, y: Any, softness: float = 1.0) -> Any:
+        """Differentiable approximation of max(x, y)."""
+        ...
+
+    def smooth_min(self, x: Any, y: Any, softness: float = 1.0) -> Any:
+        """Differentiable approximation of min(x, y)."""
+        ...
+
+    def smooth_clip(
+        self, x: Any, min_val: Any, max_val: Any, softness: float = 1.0
+    ) -> Any:
+        """Differentiable approximation of clipping to [min_val, max_val]."""
+        ...
+
+    def smooth_switch(
+        self,
+        selector: Any,
+        threshold: Any,
+        left: Any,
+        right: Any,
+        softness: float = 1.0,
+    ) -> Any:
+        """Smoothly blend from left to right as selector crosses threshold."""
+        ...
+
     # --- Interpolation ---
 
     def interp(self, x: Any, xp: Any, fp: Any) -> Any:

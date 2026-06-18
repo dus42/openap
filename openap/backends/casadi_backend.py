@@ -92,6 +92,36 @@ class CasadiBackend:
     def clip(self, x: Any, min_val: Any, max_val: Any) -> Any:
         return self.ca.fmax(min_val, self.ca.fmin(x, max_val))
 
+    def smooth_max(self, x: Any, y: Any, softness: float = 1.0) -> Any:
+        delta = x - y
+        return 0.5 * (x + y + self.ca.sqrt(delta**2 + softness**2))
+
+    def smooth_min(self, x: Any, y: Any, softness: float = 1.0) -> Any:
+        delta = x - y
+        return 0.5 * (x + y - self.ca.sqrt(delta**2 + softness**2))
+
+    def smooth_clip(
+        self, x: Any, min_val: Any, max_val: Any, softness: float = 1.0
+    ) -> Any:
+        return self.smooth_min(
+            self.smooth_max(x, min_val, softness),
+            max_val,
+            softness,
+        )
+
+    def smooth_switch(
+        self,
+        selector: Any,
+        threshold: Any,
+        left: Any,
+        right: Any,
+        softness: float = 1.0,
+    ) -> Any:
+        weight = 0.5 * (
+            1 + self.ca.tanh((selector - threshold) / (2 * softness))
+        )
+        return left + weight * (right - left)
+
     # --- Interpolation ---
 
     def interp(self, x: Any, xp: Any, fp: Any) -> Any:
