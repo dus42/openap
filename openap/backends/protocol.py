@@ -71,6 +71,10 @@ class MathBackend(Protocol):
         """Absolute value."""
         ...
 
+    def smooth_abs(self, x: Any, softness: float = 1.0) -> Any:
+        """Differentiable approximation of abs(x)."""
+        ...
+
     def where(self, condition: Any, x: Any, y: Any) -> Any:
         """Conditional selection: where(cond, x, y) = x if cond else y."""
         ...

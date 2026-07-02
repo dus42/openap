@@ -70,6 +70,10 @@ class NumpyBackend:
         return np.abs(x)
 
     @staticmethod
+    def smooth_abs(x: Any, softness: float = 1.0) -> Any:
+        return np.sqrt(x**2 + softness**2)
+
+    @staticmethod
     def where(condition: Any, x: Any, y: Any) -> Any:
         return np.where(condition, x, y)
 

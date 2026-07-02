@@ -81,6 +81,9 @@ class JaxBackend:
     def abs(self, x: Any) -> Any:
         return self.jnp.abs(x)
 
+    def smooth_abs(self, x: Any, softness: float = 1.0) -> Any:
+        return self.jnp.sqrt(x**2 + softness**2)
+
     def where(self, condition: Any, x: Any, y: Any) -> Any:
         return self.jnp.where(condition, x, y)
 

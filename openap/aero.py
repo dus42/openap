@@ -18,6 +18,7 @@ Usage:
     T = aero_jax.temperature(10000)
 """
 
+from numbers import Real
 from typing import Any, Optional, Tuple
 
 from openap.backends import BackendType, NumpyBackend, default_backend
@@ -100,12 +101,26 @@ class Aero:
             Tuple of (pressure [Pa], density [kg/m3], temperature [K]).
         """
         b = self.backend
-        dT = b.clip(dT, -25, 15)
+        smooth_guards = getattr(b, "smooth_guards", False)
+        if smooth_guards:
+            dT = (
+                max(-25, min(dT, 15))
+                if isinstance(dT, Real)
+                else b.smooth_clip(dT, -25, 15, softness=0.1)
+            )
+        else:
+            dT = b.clip(dT, -25, 15)
         T0_shift = T0 + dT
 
-        T = b.maximum(T0_shift + beta * h, 216.65 + dT)
+        trop_temp = T0_shift + beta * h
+        strat_temp = 216.65 + dT
+        if smooth_guards:
+            T = b.smooth_max(trop_temp, strat_temp, softness=0.1)
+            dhstrat = b.smooth_max(0.0, h - 11000.0, softness=10.0)
+        else:
+            T = b.maximum(trop_temp, strat_temp)
+            dhstrat = b.maximum(0.0, h - 11000.0)
         rhotrop = rho0 * b.power(T / T0_shift, 4.256848030018761)
-        dhstrat = b.maximum(0.0, h - 11000.0)
         rho = rhotrop * b.exp(-dhstrat / 6341.552161)
         p = rho * R * T
         return p, rho, T
@@ -317,7 +332,10 @@ class Aero:
         """
         b = self.backend
         T0_shift = T0 + dT
-        mach_safe = b.maximum(mach, 1e-4)
+        if getattr(b, "smooth_guards", False):
+            mach_safe = b.smooth_max(mach, 1e-4, softness=1e-6)
+        else:
+            mach_safe = b.maximum(mach, 1e-4)
         delta = (b.power(0.2 * (v_cas / a0) ** 2 + 1, 3.5) - 1) / (
             b.power(0.2 * mach_safe**2 + 1, 3.5) - 1
         )
@@ -366,7 +384,7 @@ def h_isa(p, dT=0):
 # Backward compatibility - geographic functions moved to openap.geo
 # =============================================================================
 
-from openap.geo import bearing, distance, latlon
+from openap.geo import bearing, distance, latlon  # noqa: F401
 
 
 def tas2mach(v_tas, h, dT=0):
