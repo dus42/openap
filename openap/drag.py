@@ -120,7 +120,10 @@ class Drag(DragBase):
         rho = self.aero.density(h, dT=dT)
         qS = 0.5 * rho * v**2 * S
         L = mass * self.aero.g0 * b.cos(gamma)
-        qS = b.maximum(qS, 1e-3)  # avoid zero division
+        if getattr(b, "smooth_guards", False):
+            qS = b.smooth_max(qS, 1e-3, softness=1e-4)
+        else:
+            qS = b.maximum(qS, 1e-3)  # avoid zero division
         cl = L / qS
 
         return cl, qS
@@ -202,7 +205,10 @@ class Drag(DragBase):
             )
 
             # Equation 15 in Gur et al. (2010)
-            dmach = b.maximum(mach - mach_crit, 0.0)
+            if getattr(b, "smooth_guards", False):
+                dmach = b.smooth_max(mach - mach_crit, 0.0, softness=1e-3)
+            else:
+                dmach = b.maximum(mach - mach_crit, 0.0)
             dCdw = 20 * dmach**4
 
         else:

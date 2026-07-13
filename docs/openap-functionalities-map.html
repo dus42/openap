@@ -1,0 +1,452 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenAP Functionalities Map</title>
+  <style>
+    :root {
+      --bg: #f6f9fc;
+      --ink: #102538;
+      --muted: #40566d;
+      --line: #d8e2eb;
+      --shadow: 0 14px 30px rgba(29, 54, 77, 0.11);
+      --blue-bg: #e8f3ff;
+      --blue-bd: #94c3ed;
+      --green-bg: #e4f6f0;
+      --green-bd: #82c8b7;
+      --amber-bg: #fff3d9;
+      --amber-bd: #dfb65f;
+      --violet-bg: #f0edff;
+      --violet-bd: #b8afe7;
+      --rose-bg: #fff0ef;
+      --rose-bd: #e1a09d;
+      --teal: #16806e;
+      --center-a: #16324a;
+      --center-b: #1a625b;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    html,
+    body {
+      margin: 0;
+      width: 1600px;
+      min-width: 1600px;
+      height: 900px;
+      overflow: hidden;
+      background: var(--bg);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Arial, sans-serif;
+      color: var(--ink);
+    }
+
+    body {
+      display: grid;
+      place-items: center;
+    }
+
+    .canvas {
+      position: relative;
+      width: 1600px;
+      height: 900px;
+      padding: 54px 54px 58px;
+      background:
+        radial-gradient(circle at 49% 45%, rgba(22, 128, 110, 0.08), transparent 34%),
+        linear-gradient(180deg, #f8fbfd 0%, #f4f8fb 100%);
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: 390px 420px 590px;
+      gap: 54px;
+      align-items: center;
+      height: 788px;
+    }
+
+    .column,
+    .outputs {
+      height: 748px;
+      border: 1.2px solid var(--line);
+      border-radius: 22px;
+      background: rgba(255, 255, 255, 0.94);
+      box-shadow: var(--shadow);
+    }
+
+    .column {
+      padding: 30px;
+    }
+
+    .section-title {
+      margin: 0 0 24px;
+      font-size: 16px;
+      line-height: 1;
+      font-weight: 760;
+      letter-spacing: 0.45px;
+      text-transform: uppercase;
+    }
+
+    .stack {
+      display: grid;
+      gap: 22px;
+    }
+
+    .card {
+      min-height: 100px;
+      padding: 19px 25px 20px;
+      border: 1.2px solid #d0dbe5;
+      border-radius: 14px;
+      background: #fff;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+    }
+
+    .card h3 {
+      margin: 0 0 9px;
+      font-size: 18px;
+      line-height: 1.15;
+      font-weight: 760;
+    }
+
+    .card p {
+      margin: 0;
+      font-size: 13px;
+      line-height: 1.43;
+      color: var(--muted);
+    }
+
+    .blue {
+      background: var(--blue-bg);
+      border-color: var(--blue-bd);
+    }
+
+    .green {
+      background: var(--green-bg);
+      border-color: var(--green-bd);
+    }
+
+    .amber {
+      background: var(--amber-bg);
+      border-color: var(--amber-bd);
+    }
+
+    .violet {
+      background: var(--violet-bg);
+      border-color: var(--violet-bd);
+    }
+
+    .rose {
+      background: var(--rose-bg);
+      border-color: var(--rose-bd);
+    }
+
+    .hub-zone {
+      position: relative;
+      height: 748px;
+    }
+
+    .hub {
+      position: absolute;
+      left: 36px;
+      top: 170px;
+      width: 348px;
+      height: 340px;
+      padding: 40px 42px;
+      border-radius: 26px;
+      background:
+        linear-gradient(118deg, rgba(13, 38, 62, 0.4) 0 28%, transparent 28% 100%),
+        linear-gradient(124deg, var(--center-a), var(--center-b));
+      border: 1.2px solid #245b63;
+      box-shadow: var(--shadow);
+      color: #fff;
+      z-index: 2;
+    }
+
+    .hub h1 {
+      margin: 0 0 10px;
+      font-size: 28px;
+      line-height: 1.05;
+      font-weight: 800;
+      letter-spacing: 0;
+    }
+
+    .hub .tagline {
+      margin: 0 0 28px;
+      font-size: 14px;
+      line-height: 1.5;
+      color: #dbeaf0;
+    }
+
+    .hub-list {
+      display: grid;
+      gap: 10px;
+      margin-top: 20px;
+    }
+
+    .hub-pill {
+      display: inline-flex;
+      align-items: center;
+      height: 34px;
+      width: fit-content;
+      padding: 0 15px;
+      border-radius: 14px;
+      border: 1px solid rgba(190, 241, 234, 0.45);
+      background: rgba(255, 255, 255, 0.08);
+      color: #bff1ea;
+      font-size: 13px;
+      font-weight: 760;
+    }
+
+    .spoke {
+      position: absolute;
+      width: 202px;
+      min-height: 100px;
+      padding: 16px 18px 17px;
+      border-radius: 14px;
+      border: 1.2px solid #d0dbe5;
+      background: #fff;
+      box-shadow: 0 10px 22px rgba(29, 54, 77, 0.08);
+      z-index: 3;
+    }
+
+    .spoke h3 {
+      margin: 0 0 8px;
+      font-size: 16px;
+      line-height: 1.15;
+      font-weight: 760;
+    }
+
+    .spoke p {
+      margin: 0;
+      font-size: 12.5px;
+      line-height: 1.38;
+      color: var(--muted);
+    }
+
+    .spoke.data {
+      top: 24px;
+      left: 10px;
+    }
+
+    .spoke.physics {
+      top: 24px;
+      right: 2px;
+    }
+
+    .spoke.kinematic {
+      bottom: 44px;
+      left: 10px;
+    }
+
+    .spoke.environment {
+      bottom: 44px;
+      right: 2px;
+    }
+
+    .connector {
+      position: absolute;
+      border: 2px solid rgba(22, 128, 110, 0.5);
+      z-index: 1;
+    }
+
+    .connector.a {
+      left: 155px;
+      top: 119px;
+      width: 108px;
+      height: 90px;
+      border-right: 0;
+      border-bottom: 0;
+      border-radius: 28px 0 0 0;
+    }
+
+    .connector.b {
+      right: 117px;
+      top: 119px;
+      width: 108px;
+      height: 90px;
+      border-left: 0;
+      border-bottom: 0;
+      border-radius: 0 28px 0 0;
+    }
+
+    .connector.c {
+      left: 155px;
+      bottom: 139px;
+      width: 108px;
+      height: 90px;
+      border-right: 0;
+      border-top: 0;
+      border-radius: 0 0 0 28px;
+    }
+
+    .connector.d {
+      right: 117px;
+      bottom: 139px;
+      width: 108px;
+      height: 90px;
+      border-left: 0;
+      border-top: 0;
+      border-radius: 0 0 28px 0;
+    }
+
+    .outputs {
+      height: 520px;
+      padding: 30px;
+    }
+
+    .output-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 20px;
+    }
+
+    .output-grid .card {
+      min-height: 126px;
+      padding: 18px 22px 20px;
+    }
+
+    .output-grid .card.wide {
+      grid-column: span 2;
+      min-height: 110px;
+    }
+
+    .flow {
+      position: absolute;
+      top: 438px;
+      width: 70px;
+      height: 24px;
+      color: var(--teal);
+    }
+
+    .flow::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 10px;
+      width: 48px;
+      height: 4px;
+      border-radius: 999px;
+      background: currentColor;
+    }
+
+    .flow::after {
+      content: "";
+      position: absolute;
+      right: 0;
+      top: 0;
+      width: 0;
+      height: 0;
+      border-top: 12px solid transparent;
+      border-bottom: 12px solid transparent;
+      border-left: 30px solid currentColor;
+    }
+
+    .flow.one {
+      left: 444px;
+    }
+
+    .flow.two {
+      left: 912px;
+    }
+  </style>
+</head>
+<body>
+  <main class="canvas" aria-label="OpenAP functionalities map">
+    <div class="shell">
+      <section class="column">
+        <h2 class="section-title">Input foundations</h2>
+        <div class="stack">
+          <article class="card blue">
+            <h3>Aircraft and engines</h3>
+            <p>Open aircraft and engine properties for performance calculations.</p>
+          </article>
+          <article class="card">
+            <h3>Trajectory observations</h3>
+            <p>Flight data can be analyzed for phases, fuel, and emissions.</p>
+          </article>
+          <article class="card green">
+            <h3>Navigation context</h3>
+            <p>Airport, waypoint, distance, bearing, and route geometry helpers.</p>
+          </article>
+          <article class="card amber">
+            <h3>Atmospheric state</h3>
+            <p>Altitude, speed, vertical rate, and temperature drive model outputs.</p>
+          </article>
+          <article class="card violet">
+            <h3>Research scenarios</h3>
+            <p>Inputs for simulations, fleet studies, inventories, and optimization.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="hub-zone" aria-label="OpenAP model families">
+        <div class="connector a"></div>
+        <div class="connector b"></div>
+        <div class="connector c"></div>
+        <div class="connector d"></div>
+
+        <article class="spoke data blue">
+          <h3>Open model data</h3>
+          <p>Aircraft, engine, drag polar, kinematic, and navigation datasets.</p>
+        </article>
+
+        <article class="spoke physics amber">
+          <h3>Dynamic models</h3>
+          <p>Thrust, drag, fuel flow, and aircraft performance envelopes.</p>
+        </article>
+
+        <article class="spoke kinematic green">
+          <h3>Kinematic models</h3>
+          <p>Speed, altitude, vertical-rate profiles, phase behavior, and WRAP.</p>
+        </article>
+
+        <article class="spoke environment rose">
+          <h3>Emission models</h3>
+          <p>CO2, H2O, SOx, soot, and NOx estimates from fuel and engine data.</p>
+        </article>
+
+        <article class="hub">
+          <h1>OpenAP</h1>
+          <p class="tagline">Open aircraft performance model and Python toolkit for air transportation research and simulation.</p>
+          <div class="hub-list">
+            <div class="hub-pill">performance</div>
+            <div class="hub-pill">emissions</div>
+            <div class="hub-pill">trajectories</div>
+          </div>
+        </article>
+      </section>
+
+      <section class="outputs">
+        <h2 class="section-title">Functional outputs</h2>
+        <div class="output-grid">
+          <article class="card blue">
+            <h3>Performance quantities</h3>
+            <p>Thrust, drag, speed, altitude, vertical rate, and limits.</p>
+          </article>
+          <article class="card green">
+            <h3>Fuel and emissions</h3>
+            <p>Fuel flow, fuel burn, and pollutant emission estimates.</p>
+          </article>
+          <article class="card amber">
+            <h3>Trajectory generation</h3>
+            <p>Synthetic trajectories from aircraft and kinematic parameters.</p>
+          </article>
+          <article class="card violet">
+            <h3>Phase identification</h3>
+            <p>Detect climb, cruise, descent, level, and other flight segments.</p>
+          </article>
+          <article class="card rose wide">
+            <h3>Simulation and optimization support</h3>
+            <p>Reusable performance building blocks for ATM studies, emissions inventories, traffic simulation, and OpenTOP trajectory optimization.</p>
+          </article>
+        </div>
+      </section>
+    </div>
+
+    <div class="flow one" aria-hidden="true"></div>
+    <div class="flow two" aria-hidden="true"></div>
+  </main>
+</body>
+</html>

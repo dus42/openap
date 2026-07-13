@@ -4,12 +4,11 @@ This module tests that all three backends (NumPy, CasADi, JAX) work
 correctly and produce consistent results.
 """
 
-import numpy as np
 import pytest
 
+import numpy as np
 from openap import Aero, Drag, Emission, FuelFlow, Thrust
 from openap.backends import CasadiBackend, JaxBackend, NumpyBackend
-
 
 # Expected values computed with NumPy backend (reference)
 EXPECTED = {
@@ -126,6 +125,35 @@ class TestNumpyBackend:
         assert T.shape == (3,)
         np.testing.assert_allclose(T, EXPECTED["thrust_array"], rtol=RTOL)
 
+    def test_smooth_helpers(self):
+        """Test differentiable clamp/switch helper values."""
+        backend = NumpyBackend()
+
+        assert backend.smooth_max(10.0, 0.0, softness=0.1) == pytest.approx(
+            10.0, rel=1e-4
+        )
+        assert backend.smooth_min(10.0, 0.0, softness=0.1) == pytest.approx(
+            0.0, abs=1e-3
+        )
+        assert backend.smooth_clip(2.0, 0.0, 1.0, softness=0.01) == pytest.approx(
+            1.0, rel=1e-4
+        )
+        assert backend.smooth_abs(0.0, softness=0.5) == pytest.approx(0.5)
+        assert backend.smooth_switch(
+            -100.0,
+            0.0,
+            left=2.0,
+            right=4.0,
+            softness=1.0,
+        ) == pytest.approx(2.0, rel=1e-4)
+        assert backend.smooth_switch(
+            100.0,
+            0.0,
+            left=2.0,
+            right=4.0,
+            softness=1.0,
+        ) == pytest.approx(4.0, rel=1e-4)
+
 
 class TestCasadiBackend:
     """Tests for CasadiBackend."""
@@ -221,6 +249,23 @@ class TestCasadiBackend:
         assert float(result) < 0
         assert float(result) == pytest.approx(-276.19, rel=0.01)
 
+    def test_smooth_helpers_are_symbolic(self, casadi):
+        """Test smooth helpers support CasADi symbolic derivatives."""
+        backend = CasadiBackend()
+        x = casadi.SX.sym("x")
+        max_expr = backend.smooth_max(x, 0.0, softness=0.5)
+        abs_expr = backend.smooth_abs(x, softness=0.5)
+        max_jac = casadi.jacobian(max_expr, x)
+        abs_jac = casadi.jacobian(abs_expr, x)
+        f = casadi.Function("f", [x], [max_expr, max_jac, abs_expr, abs_jac])
+
+        max_value, max_derivative, abs_value, abs_derivative = f(0.0)
+
+        assert float(max_value) == pytest.approx(0.25)
+        assert float(max_derivative) == pytest.approx(0.5)
+        assert float(abs_value) == pytest.approx(0.5)
+        assert float(abs_derivative) == pytest.approx(0.0)
+
     def test_aero_symbolic(self, casadi):
         """Test aero functions with symbolic inputs."""
         aero = Aero(backend=CasadiBackend())
@@ -233,6 +278,32 @@ class TestCasadiBackend:
         f = casadi.Function("f", [h], [T])
         result = float(f(10000))
         assert result == pytest.approx(EXPECTED["aero_temperature"], rel=RTOL)
+
+    def test_openap_symbolic_performance_uses_smooth_guards(self, casadi):
+        """Native OpenAP CasADi expressions should avoid hard guard operators."""
+        backend = CasadiBackend()
+        thrust = Thrust("A320", backend=backend)
+        drag = Drag("A320", backend=backend)
+        fuel = FuelFlow("A320", backend=backend)
+
+        mass = casadi.SX.sym("mass")
+        tas = casadi.SX.sym("tas")
+        alt = casadi.SX.sym("alt")
+        vs = casadi.SX.sym("vs")
+
+        expr = "\n".join(
+            str(value)
+            for value in (
+                thrust.climb(tas, alt, vs),
+                drag.clean(mass, tas, alt, vs),
+                fuel.enroute(mass, tas, alt, vs),
+            )
+        )
+
+        assert "fmax" not in expr
+        assert "fmin" not in expr
+        assert "fabs" not in expr
+        assert "if_else" not in expr
 
 
 class TestJaxBackend:
@@ -501,7 +572,7 @@ class TestConvenienceModules:
         """Test openap.casadi convenience module."""
         casadi = pytest.importorskip("casadi")
 
-        from openap.casadi import Drag, Emission, FuelFlow, Thrust, aero, prop
+        from openap.casadi import Thrust, aero, prop
 
         # Check classes use CasadiBackend
         thrust = Thrust("A320")
@@ -526,7 +597,7 @@ class TestConvenienceModules:
         jax = pytest.importorskip("jax")
         jnp = jax.numpy
 
-        from openap.jax import Drag, Emission, FuelFlow, Thrust, aero
+        from openap.jax import Thrust, aero
 
         # Check classes use JaxBackend
         thrust = Thrust("A320")

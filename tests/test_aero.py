@@ -4,13 +4,12 @@ This module tests all aeronautical calculation functions in openap.aero,
 including atmospheric properties, airspeed conversions, and navigation functions.
 """
 
-import numpy as np
 import pytest
 
+import numpy as np
 from openap import aero
 from openap.aero import Aero
-from openap.backends import CasadiBackend, JaxBackend, NumpyBackend
-
+from openap.backends import CasadiBackend, JaxBackend
 
 # Tolerance for floating point comparisons
 RTOL = 1e-4  # 0.01% relative tolerance
@@ -69,7 +68,7 @@ class TestAeroAtmospheric:
     def test_atmos_stratosphere(self):
         """Test atmospheric properties in stratosphere (15km)."""
         aero_obj = Aero()
-        p, rho, T = aero_obj.atmos(15000)
+        p, _, T = aero_obj.atmos(15000)
 
         # Temperature is constant in stratosphere (216.65 K)
         assert T == pytest.approx(EXPECTED["temperature_15km"], rel=RTOL)
@@ -80,11 +79,11 @@ class TestAeroAtmospheric:
         aero_obj = Aero()
 
         # +10K ISA deviation
-        p, rho, T = aero_obj.atmos(10000, dT=10)
+        _, _, T = aero_obj.atmos(10000, dT=10)
         assert T == pytest.approx(223.15 + 10, rel=RTOL)
 
         # -10K ISA deviation
-        p, rho, T = aero_obj.atmos(10000, dT=-10)
+        _, _, T = aero_obj.atmos(10000, dT=-10)
         assert T == pytest.approx(223.15 - 10, rel=RTOL)
 
     def test_temperature(self):
@@ -372,7 +371,7 @@ class TestAeroArrayInputs:
         """Test atmospheric properties with array inputs."""
         aero_obj = Aero()
         h = np.array([0, 5000, 10000, 15000])
-        p, rho, T = aero_obj.atmos(h)
+        _, _, T = aero_obj.atmos(h)
 
         assert isinstance(T, np.ndarray)
         assert T.shape == (4,)
@@ -414,6 +413,30 @@ class TestAeroCasadiBackend:
         f = casadi.Function("f", [p], [h])
         result = float(f(26429.70))
         assert result == pytest.approx(10000.0, rel=0.01)
+
+    def test_atmos_symbolic_uses_smooth_tropopause(self, casadi):
+        """CasADi atmosphere should avoid hard min/max kinks at tropopause."""
+        aero_obj = Aero(backend=CasadiBackend())
+
+        h = casadi.SX.sym("h")
+        p, rho, T = aero_obj.atmos(h)
+        expr = "\n".join(str(value) for value in (p, rho, T))
+
+        assert "fmax" not in expr
+        assert "fmin" not in expr
+        assert "if_else" not in expr
+
+        dTdh = casadi.jacobian(T, h)
+        f = casadi.Function("f", [h], [T, dTdh])
+
+        left_T, left_dTdh = f(11000 - 1)
+        right_T, right_dTdh = f(11000 + 1)
+
+        assert np.isfinite(float(left_T))
+        assert np.isfinite(float(right_T))
+        assert np.isfinite(float(left_dTdh))
+        assert np.isfinite(float(right_dTdh))
+        assert abs(float(left_dTdh) - float(right_dTdh)) < 1e-3
 
     def test_cas2tas_symbolic(self, casadi):
         """Test CAS to TAS with symbolic inputs."""
