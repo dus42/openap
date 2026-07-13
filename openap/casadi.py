@@ -16,7 +16,6 @@ Usage:
 
 from openap import prop
 from openap.aero import Aero
-from openap.geo import Geo
 from openap.backends import CasadiBackend
 
 # Create a shared CasADi backend instance
@@ -57,8 +56,7 @@ class Emission(_EmissionBase):
         super().__init__(ac, eng, backend=_casadi_backend, **kwargs)
 
 
-# Export the CasADi-specific aero and geo modules
+# Export the CasADi-specific aero module for backward compatibility
 aero = Aero(backend=_casadi_backend)
-geo = Geo(backend=_casadi_backend)
 
-__all__ = ["Drag", "Emission", "FuelFlow", "Thrust", "aero", "geo", "prop"]
+__all__ = ["Drag", "Emission", "FuelFlow", "Thrust", "aero", "prop"]

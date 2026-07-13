@@ -11,7 +11,7 @@ from openap.backends import BackendType
 # Type alias for numeric inputs (scalar, array, or symbolic)
 Numeric = Any
 from openap.extra import ndarrayconvert
-from openap.aero import fpm, kts
+from openap.extra.aero import fpm, kts
 
 from .base import FuelFlowBase
 
@@ -136,7 +136,6 @@ class FuelFlow(FuelFlowBase):
         tas: Numeric,
         alt: Optional[Numeric] = None,
         throttle: Numeric = 1,
-        dT: Numeric=1,
     ) -> Numeric:
         """Compute the fuel flow at takeoff.
 
@@ -154,7 +153,7 @@ class FuelFlow(FuelFlowBase):
             Fuel flow (unit: kg/s).
 
         """
-        Tmax = self.thrust.takeoff(tas=tas, alt=alt, dT=dT)
+        Tmax = self.thrust.takeoff(tas=tas, alt=alt)
         fuelflow = throttle * self.at_thrust(Tmax)
         return fuelflow
 

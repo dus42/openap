@@ -71,10 +71,6 @@ class MathBackend(Protocol):
         """Absolute value."""
         ...
 
-    def smooth_abs(self, x: Any, softness: float = 1.0) -> Any:
-        """Differentiable approximation of abs(x)."""
-        ...
-
     def where(self, condition: Any, x: Any, y: Any) -> Any:
         """Conditional selection: where(cond, x, y) = x if cond else y."""
         ...
@@ -89,31 +85,6 @@ class MathBackend(Protocol):
 
     def clip(self, x: Any, min_val: Any, max_val: Any) -> Any:
         """Clip values to range [min_val, max_val]."""
-        ...
-
-    def smooth_max(self, x: Any, y: Any, softness: float = 1.0) -> Any:
-        """Differentiable approximation of max(x, y)."""
-        ...
-
-    def smooth_min(self, x: Any, y: Any, softness: float = 1.0) -> Any:
-        """Differentiable approximation of min(x, y)."""
-        ...
-
-    def smooth_clip(
-        self, x: Any, min_val: Any, max_val: Any, softness: float = 1.0
-    ) -> Any:
-        """Differentiable approximation of clipping to [min_val, max_val]."""
-        ...
-
-    def smooth_switch(
-        self,
-        selector: Any,
-        threshold: Any,
-        left: Any,
-        right: Any,
-        softness: float = 1.0,
-    ) -> Any:
-        """Smoothly blend from left to right as selector crosses threshold."""
         ...
 
     # --- Interpolation ---

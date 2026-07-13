@@ -81,9 +81,6 @@ class JaxBackend:
     def abs(self, x: Any) -> Any:
         return self.jnp.abs(x)
 
-    def smooth_abs(self, x: Any, softness: float = 1.0) -> Any:
-        return self.jnp.sqrt(x**2 + softness**2)
-
     def where(self, condition: Any, x: Any, y: Any) -> Any:
         return self.jnp.where(condition, x, y)
 
@@ -95,36 +92,6 @@ class JaxBackend:
 
     def clip(self, x: Any, min_val: Any, max_val: Any) -> Any:
         return self.jnp.clip(x, min_val, max_val)
-
-    def smooth_max(self, x: Any, y: Any, softness: float = 1.0) -> Any:
-        delta = x - y
-        return 0.5 * (x + y + self.jnp.sqrt(delta**2 + softness**2))
-
-    def smooth_min(self, x: Any, y: Any, softness: float = 1.0) -> Any:
-        delta = x - y
-        return 0.5 * (x + y - self.jnp.sqrt(delta**2 + softness**2))
-
-    def smooth_clip(
-        self, x: Any, min_val: Any, max_val: Any, softness: float = 1.0
-    ) -> Any:
-        return self.smooth_min(
-            self.smooth_max(x, min_val, softness),
-            max_val,
-            softness,
-        )
-
-    def smooth_switch(
-        self,
-        selector: Any,
-        threshold: Any,
-        left: Any,
-        right: Any,
-        softness: float = 1.0,
-    ) -> Any:
-        weight = 0.5 * (
-            1 + self.jnp.tanh((selector - threshold) / (2 * softness))
-        )
-        return left + weight * (right - left)
 
     # --- Interpolation ---
 

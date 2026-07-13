@@ -193,16 +193,10 @@ class Thrust(ThrustBase):
         """
         b = self.backend
 
-        if getattr(b, "smooth_guards", False):
-            roc = b.smooth_abs(roc, softness=1e-3)
-        else:
-            roc = b.abs(roc)
+        roc = b.abs(roc)
 
         h = alt * self.aero.ft
-        if getattr(b, "smooth_guards", False):
-            tas = b.smooth_max(tas, 10, softness=0.1)
-        else:
-            tas = b.maximum(10, tas)
+        tas = b.maximum(10, tas)
 
         mach = self.aero.tas2mach(tas * self.aero.kts, h, dT=dT)
         vcas = self.aero.tas2cas(tas * self.aero.kts, h, dT=dT)
@@ -243,26 +237,9 @@ class Thrust(ThrustBase):
         # Equation 19 in Bartel and Young (2008)
         ratio_seg1 = m * (P / Pcr) + (F10 / Fcr - m * (P10 / Pcr))
 
-        if getattr(b, "smooth_guards", False):
-            ratio = b.smooth_switch(
-                alt,
-                30000,
-                left=b.smooth_switch(
-                    alt,
-                    10000,
-                    left=ratio_seg1,
-                    right=ratio_seg2,
-                    softness=100,
-                ),
-                right=ratio_seg3,
-                softness=100,
-            )
-        else:
-            ratio = b.where(
-                alt > 30000,
-                ratio_seg3,
-                b.where(alt > 10000, ratio_seg2, ratio_seg1),
-            )
+        ratio = b.where(
+            alt > 30000, ratio_seg3, b.where(alt > 10000, ratio_seg2, ratio_seg1)
+        )
 
         F = ratio * Fcr
         return F

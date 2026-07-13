@@ -18,7 +18,6 @@ Usage:
     T = aero_jax.temperature(10000)
 """
 
-from numbers import Real
 from typing import Any, Optional, Tuple
 
 from openap.backends import BackendType, NumpyBackend, default_backend
@@ -101,26 +100,12 @@ class Aero:
             Tuple of (pressure [Pa], density [kg/m3], temperature [K]).
         """
         b = self.backend
-        smooth_guards = getattr(b, "smooth_guards", False)
-        if smooth_guards:
-            dT = (
-                max(-25, min(dT, 15))
-                if isinstance(dT, Real)
-                else b.smooth_clip(dT, -25, 15, softness=0.1)
-            )
-        else:
-            dT = b.clip(dT, -25, 15)
+        dT = b.clip(dT, -25, 15)
         T0_shift = T0 + dT
 
-        trop_temp = T0_shift + beta * h
-        strat_temp = 216.65 + dT
-        if smooth_guards:
-            T = b.smooth_max(trop_temp, strat_temp, softness=0.1)
-            dhstrat = b.smooth_max(0.0, h - 11000.0, softness=10.0)
-        else:
-            T = b.maximum(trop_temp, strat_temp)
-            dhstrat = b.maximum(0.0, h - 11000.0)
+        T = b.maximum(T0_shift + beta * h, 216.65 + dT)
         rhotrop = rho0 * b.power(T / T0_shift, 4.256848030018761)
+        dhstrat = b.maximum(0.0, h - 11000.0)
         rho = rhotrop * b.exp(-dhstrat / 6341.552161)
         p = rho * R * T
         return p, rho, T
@@ -177,6 +162,63 @@ class Aero:
         T = self.temperature(h, dT=dT)
         return self.backend.sqrt(gamma * R * T)
 
+    def distance(self, lat1: Any, lon1: Any, lat2: Any, lon2: Any, h: Any = 0) -> Any:
+        """Compute distance between coordinates using Haversine formula.
+
+        Args:
+            lat1: Starting latitude (degrees).
+            lon1: Starting longitude (degrees).
+            lat2: Ending latitude (degrees).
+            lon2: Ending longitude (degrees).
+            h: Altitude (meters). Defaults to 0.
+
+        Returns:
+            Distance (meters).
+        """
+        b = self.backend
+        deg2rad = b.pi / 180.0
+
+        lat1_r = lat1 * deg2rad
+        lon1_r = lon1 * deg2rad
+        lat2_r = lat2 * deg2rad
+        lon2_r = lon2 * deg2rad
+
+        dlon = lon2_r - lon1_r
+        dlat = lat2_r - lat1_r
+
+        a = b.sin(dlat / 2) ** 2 + b.cos(lat1_r) * b.cos(lat2_r) * b.sin(dlon / 2) ** 2
+        c = 2 * b.arcsin(b.sqrt(a))
+        dist = c * (r_earth + h)
+        return dist
+
+    def bearing(self, lat1: Any, lon1: Any, lat2: Any, lon2: Any) -> Any:
+        """Compute bearing between coordinates.
+
+        Args:
+            lat1: Starting latitude (degrees).
+            lon1: Starting longitude (degrees).
+            lat2: Ending latitude (degrees).
+            lon2: Ending longitude (degrees).
+
+        Returns:
+            Bearing (degrees). Between 0 and 360.
+        """
+        b = self.backend
+        deg2rad = b.pi / 180.0
+        rad2deg = 180.0 / b.pi
+
+        lat1_r = lat1 * deg2rad
+        lon1_r = lon1 * deg2rad
+        lat2_r = lat2 * deg2rad
+        lon2_r = lon2 * deg2rad
+
+        x = b.sin(lon2_r - lon1_r) * b.cos(lat2_r)
+        y = b.cos(lat1_r) * b.sin(lat2_r) - b.sin(lat1_r) * b.cos(lat2_r) * b.cos(
+            lon2_r - lon1_r
+        )
+        initial_bearing = b.arctan2(x, y) * rad2deg
+        return b.fmod(initial_bearing + 360, 360)
+
     def h_isa(self, p: Any, dT: Any = 0) -> Any:
         """Compute ISA altitude for a given pressure.
 
@@ -200,6 +242,40 @@ class Aero:
         h1 = -R * T1 / g0 * b.log(p / p1) + 11000
 
         return b.where(p > 22630, h, h1)
+
+    def latlon(
+        self, lat1: Any, lon1: Any, d: Any, brg: Any, h: Any = 0
+    ) -> Tuple[Any, Any]:
+        """Get lat/lon given current point, distance and bearing.
+
+        Args:
+            lat1: Starting latitude (degrees).
+            lon1: Starting longitude (degrees).
+            d: Distance from point 1 (meters).
+            brg: Bearing at point 1 (degrees).
+            h: Altitude (meters). Defaults to 0.
+
+        Returns:
+            Tuple of (latitude, longitude) in degrees.
+        """
+        b = self.backend
+        deg2rad = b.pi / 180.0
+        rad2deg = 180.0 / b.pi
+
+        lat1_r = lat1 * deg2rad
+        lon1_r = lon1 * deg2rad
+        brg_r = brg * deg2rad
+
+        lat2 = b.arcsin(
+            b.sin(lat1_r) * b.cos(d / (r_earth + h))
+            + b.cos(lat1_r) * b.sin(d / (r_earth + h)) * b.cos(brg_r)
+        )
+        lon2 = lon1_r + b.arctan2(
+            b.sin(brg_r) * b.sin(d / (r_earth + h)) * b.cos(lat1_r),
+            b.cos(d / (r_earth + h)) - b.sin(lat1_r) * b.sin(lat2),
+        )
+
+        return lat2 * rad2deg, lon2 * rad2deg
 
     def tas2mach(self, v_tas: Any, h: Any, dT: Any = 0) -> Any:
         """Convert true airspeed to Mach number.
@@ -332,10 +408,7 @@ class Aero:
         """
         b = self.backend
         T0_shift = T0 + dT
-        if getattr(b, "smooth_guards", False):
-            mach_safe = b.smooth_max(mach, 1e-4, softness=1e-6)
-        else:
-            mach_safe = b.maximum(mach, 1e-4)
+        mach_safe = b.maximum(mach, 1e-4)
         delta = (b.power(0.2 * (v_cas / a0) ** 2 + 1, 3.5) - 1) / (
             b.power(0.2 * mach_safe**2 + 1, 3.5) - 1
         )
@@ -375,16 +448,24 @@ def vsound(h, dT=0):
     return _default_aero.vsound(h, dT)
 
 
+def distance(lat1, lon1, lat2, lon2, h=0):
+    """Compute distance between coordinates using Haversine formula."""
+    return _default_aero.distance(lat1, lon1, lat2, lon2, h)
+
+
+def bearing(lat1, lon1, lat2, lon2):
+    """Compute bearing between coordinates."""
+    return _default_aero.bearing(lat1, lon1, lat2, lon2)
+
+
 def h_isa(p, dT=0):
     """Compute ISA altitude for a given pressure."""
     return _default_aero.h_isa(p, dT)
 
 
-# =============================================================================
-# Backward compatibility - geographic functions moved to openap.geo
-# =============================================================================
-
-from openap.geo import bearing, distance, latlon  # noqa: F401
+def latlon(lat1, lon1, d, brg, h=0):
+    """Get lat/lon given current point, distance and bearing."""
+    return _default_aero.latlon(lat1, lon1, d, brg, h)
 
 
 def tas2mach(v_tas, h, dT=0):

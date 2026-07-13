@@ -9,22 +9,6 @@ from ..extra import ndarrayconvert
 
 
 # %%
-def _poly1(coefficients, x, exponents):
-    total = 0.0
-    for coefficient, exponent in zip(coefficients, exponents):
-        total = total + coefficient * x**exponent
-    return total
-
-
-def _poly2(coefficients, shape, row_terms, col_terms):
-    rows, cols = shape
-    total = 0.0
-    for i in range(rows):
-        for j in range(cols):
-            total = total + coefficients[i * cols + j] * row_terms[i] * col_terms[j]
-    return total
-
-
 def load_bada4(ac: str, path: str) -> ElementTree.ElementTree:
     """Load BADA4 model XML.
 
@@ -63,12 +47,13 @@ class Drag(base.DragBase):
         super().__init__(ac, **kwargs)
 
         self.ac = ac.upper()
-        self.smooth = kwargs.get("smooth", False)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
         self.scalar = float(bxml.findtext(".//*/DPM_clean/scalar"))
-        self.d_ = [float(v.text) for v in bxml.findall(".//*/CD_clean/d")]
+        self.d_ = self.sci.array(
+            [float(v.text) for v in bxml.findall(".//*/CD_clean/d")]
+        )
         self.mach_max = float(bxml.findtext(".//*/DPM_clean/M_max"))
         self.S = float(bxml.findtext("./AFCM/S"))
 
@@ -76,66 +61,24 @@ class Drag(base.DragBase):
     def _cd_base(self, cl, mach):
         mm = (1 - mach**2) ** (-0.5)
 
-        C0 = _poly1(self.d_[0:5], mm, range(5))
-        C2 = _poly1(self.d_[5:10], mm, range(0, 13, 3))
-        C6 = self.d_[10] + _poly1(self.d_[11:15], mm, range(14, 18))
+        C0 = self.sci.dot(
+            self.sci.array([mm[:, 0] ** i for i in range(5)]).T,
+            self.d_[0:5].reshape(5, 1),
+        )
+
+        C2 = self.sci.dot(
+            self.sci.array([mm[:, 0] ** i for i in range(0, 13, 3)]).T,
+            self.d_[5:10].reshape(5, 1),
+        )
+
+        C6 = self.d_[10] + self.sci.dot(
+            self.sci.array([mm[:, 0] ** i for i in range(14, 18)]).T,
+            self.d_[11:15].reshape(4, 1),
+        )
 
         cd = self.scalar * (C0 + C2 * cl**2 + C6 * cl**6)
 
         return cd
-
-    def _cd_params_base(self, mach):
-        mm = (1 - mach**2) ** (-0.5)
-        return {
-            "cd0": self.scalar * _poly1(self.d_[0:5], mm, range(5)),
-            "cd2": self.scalar * _poly1(self.d_[5:10], mm, range(0, 13, 3)),
-            "cd6": self.scalar
-            * (self.d_[10] + _poly1(self.d_[11:15], mm, range(14, 18))),
-        }
-
-    def clean_drag_polar_params(self, tas, alt, dT=0):
-        """Return clean-configuration drag polar parameters.
-
-        BADA4 clean drag is CD = cd0(M) + cd2(M) * CL**2 + cd6(M) * CL**6.
-        The returned parameters include the same Mach-divergence correction
-        used by :meth:`clean`.
-        """
-        v = tas * self.aero.kts
-        h = alt * self.aero.ft
-        mach = self.aero.tas2mach(v, h, dT=dT)
-
-        mach_base = self.mach_max - 0.01
-        if self.smooth:
-            divergent = self.backend.smooth_max(
-                (mach - mach_base) / 0.01,
-                0,
-                softness=1e-3,
-            )
-        else:
-            divergent = self.backend.maximum((mach - mach_base) / 0.01, 0)
-
-        base = self._cd_params_base(mach)
-        at_base = self._cd_params_base(mach_base)
-        at_max = self._cd_params_base(self.mach_max)
-
-        params = {}
-        for name in ("cd0", "cd2", "cd6"):
-            divergent_value = at_base[name] + divergent**1.5 * (
-                at_max[name] - at_base[name]
-            )
-            if self.smooth:
-                params[name] = self.backend.smooth_switch(
-                    mach,
-                    self.mach_max,
-                    base[name],
-                    divergent_value,
-                    softness=1e-3,
-                )
-            else:
-                params[name] = self.backend.where(
-                    mach < self.mach_max, base[name], divergent_value
-                )
-        return params
 
     @ndarrayconvert(column=True)
     def _cd(self, cl, mach):
@@ -149,44 +92,28 @@ class Drag(base.DragBase):
         cd_mach_base = self._cd_base(cl, mach_base)
 
         divergent = (mach - mach_base) / 0.01
-        if self.smooth:
-            divergent = self.backend.smooth_max(divergent, 0, softness=1e-3)
-        else:
-            divergent = self.backend.maximum(divergent, 0)
+        divergent = self.sci.maximum(divergent, 0)
         cd_crit = cd_mach_base + divergent**1.5 * (cd_mach_max - cd_mach_base)
 
-        if self.smooth:
-            cd = self.backend.smooth_switch(
-                mach,
-                self.mach_max,
-                cd,
-                cd_crit,
-                softness=1e-3,
-            )
-        else:
-            cd = self.backend.where(mach < self.mach_max, cd, cd_crit)
+        cd = self.sci.where(mach < self.mach_max, cd, cd_crit)
 
         return cd
 
     @ndarrayconvert(column=True)
-    def _cl(self, mass, tas, alt, vs=0, dT=0):
+    def _cl(self, mass, tas, alt, vs=0):
         v = tas * self.aero.kts
         h = alt * self.aero.ft
-        rho = self.aero.density(h, dT=dT)
+        rho = self.aero.density(h)
 
         qS = 0.5 * rho * v**2 * self.S
         L = mass * self.aero.g0
 
-        if self.smooth:
-            qS_safe = self.backend.smooth_max(qS, 1e-3, softness=1e-4)
-        else:
-            qS_safe = self.backend.maximum(qS, 1e-3)
-        cl = L / qS_safe  # avoid zero division
+        cl = L / self.sci.maximum(qS, 1e-3)  # avoid zero division
 
         return cl, qS
 
     @ndarrayconvert(column=True)
-    def clean(self, mass, tas, alt, vs=0, dT=0) -> float | ndarray:
+    def clean(self, mass, tas, alt, vs=0) -> float | ndarray:
         """Compute drag at clean configuration.
 
         Args:
@@ -201,9 +128,9 @@ class Drag(base.DragBase):
         """
         v = tas * self.aero.kts
         h = alt * self.aero.ft
-        mach = self.aero.tas2mach(v, h, dT=dT)
+        mach = self.aero.tas2mach(v, h)
 
-        cl, qS = self._cl(mass, tas, alt, vs, dT=dT)
+        cl, qS = self._cl(mass, tas, alt, vs)
         cd = self._cd(cl, mach)
         D = cd * qS
 
@@ -223,7 +150,6 @@ class Thrust(base.ThrustBase):
         """
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
-        self.smooth = kwargs.get("smooth", False)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
@@ -235,11 +161,8 @@ class Thrust(base.ThrustBase):
         self.b_ = dict()
         self.c_ = dict()
 
-        for rating in ["MCRZ", "MCMB", "MTKF"]:
-            kink = bxml.findtext(f"./PFM/TFM/{rating}/kink")
-            if kink is None:
-                continue
-            self.kink[rating] = float(kink)
+        for rating in ["MCRZ", "MCMB"]:
+            self.kink[rating] = float(bxml.findtext(f"./PFM/TFM/{rating}/kink"))
             self.b_[rating] = [
                 float(t.text) for t in bxml.findall(f"./PFM/TFM/{rating}/flat_rating/b")
             ]
@@ -255,7 +178,7 @@ class Thrust(base.ThrustBase):
         Args:
             mach: Mach number.
             h: Altitude (m).
-            rating: Thrust rating ('MCRZ', 'MCMB', 'MTKF', or 'LIDL').
+            rating: Thrust rating ('MCRZ', 'MCMB', or 'LIDL').
             dT: ISA temperature deviation (K). Defaults to 0.
 
         Returns:
@@ -264,47 +187,39 @@ class Thrust(base.ThrustBase):
         """
 
         rating = rating.upper()
-        assert rating in ["MCRZ", "MCMB", "MTKF", "LIDL"]
+        assert rating in ["MCRZ", "MCMB", "LIDL"]
 
         k = 1.4
 
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
-        theta = self.aero.temperature(h, dT=dT) / self.aero.T0
+        delta = self.aero.pressure(h) / self.aero.p0
+        theta = self.aero.temperature(h) / self.aero.T0
 
         if rating == "LIDL":
-            delta_terms = [delta**i for i in range(-1, 3)]
-            mach_terms = [mach**i for i in range(3)]
-            cT = _poly2(self.ti, (3, 4), mach_terms, delta_terms)
+            ti_matrix = self.sci.reshape(self.ti, (3, 4))
+
+            delta_pow = self.sci.array([delta**i for i in range(-1, 3)]).reshape(4, -1)
+            mach_pow = self.sci.array([mach**i for i in range(3)]).reshape(3, -1)
+            cT = self.sci.einsum("ij,jk,ik->k", ti_matrix, delta_pow, mach_pow)
 
         else:
-            b = self.backend
-            mach_terms_6 = [mach**i for i in range(6)]
-            delta_terms_6 = [delta**i for i in range(6)]
-            flat_delta_T = _poly2(
-                self.b_[rating], (6, 6), delta_terms_6, mach_terms_6
-            )
-
-            mach_terms_5 = [mach**i for i in range(5)]
-            theta_t = theta * (1 + (mach**2) * (k - 1) / 2)
-            temp_terms = [theta_t**i for i in range(5)] + [
-                delta**i for i in range(1, 5)
-            ]
-            temp_delta_T = _poly2(
-                self.c_[rating], (9, 5), temp_terms, mach_terms_5
-            )
-            if self.smooth:
-                delta_T = b.smooth_switch(
-                    dT,
-                    self.kink[rating],
-                    flat_delta_T,
-                    temp_delta_T,
-                    softness=0.1,
-                )
+            if dT <= self.kink[rating]:
+                b_matrix = self.sci.reshape(self.b_[rating], (6, 6))
+                mach_pow = self.sci.array([mach**i for i in range(6)]).reshape(6, -1)
+                ratio_pow = self.sci.array([delta**j for j in range(6)]).reshape(6, -1)
+                delta_T = self.sci.einsum("ij,jk,ik->k", b_matrix, mach_pow, ratio_pow)
             else:
-                delta_T = b.where(dT <= self.kink[rating], flat_delta_T, temp_delta_T)
+                c_matrix = self.sci.reshape(self.c_[rating], (9, 5))
+                mach_pow = self.sci.array([mach**i for i in range(5)]).reshape(5, -1)
+                theta_t = theta * (1 + (mach**2) * (k - 1) / 2)
+                ratio_pow = self.sci.array(
+                    [theta_t**j for j in range(5)] + [delta**j for j in range(1, 5)]
+                ).reshape(9, -1)
+                delta_T = self.sci.einsum("ij,jk,ik->k", c_matrix, mach_pow, ratio_pow)
 
-            delta_T_terms = [delta_T**i for i in range(6)]
-            cT = _poly2(self.a_, (6, 6), delta_T_terms, mach_terms_6)
+            a_matrix = self.sci.reshape(self.a_, (6, 6))
+            mach_pow = self.sci.array([mach**i for i in range(6)]).reshape(6, -1)
+            delta_T_pow = self.sci.array([delta_T**j for j in range(6)]).reshape(6, -1)
+            cT = self.sci.einsum("ij,jk,ik->k", a_matrix, mach_pow, delta_T_pow)
 
         return cT
 
@@ -323,8 +238,8 @@ class Thrust(base.ThrustBase):
         """
         h = alt * self.aero.ft
         v = tas * self.aero.kts
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
+        mach = self.aero.tas2mach(v, h)
+        delta = self.aero.pressure(h) / self.aero.p0
 
         cT = self.cT(mach, h, "MCMB", dT)
 
@@ -345,8 +260,8 @@ class Thrust(base.ThrustBase):
         """
         h = alt * self.aero.ft
         v = tas * self.aero.kts
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
+        mach = self.aero.tas2mach(v, h)
+        delta = self.aero.pressure(h) / self.aero.p0
 
         cT = self.cT(mach, h, "MCRZ", dT)
 
@@ -365,15 +280,7 @@ class Thrust(base.ThrustBase):
             Thrust force during takeoff (N).
 
         """
-        h = alt * self.aero.ft
-        v = tas * self.aero.kts
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
-
-        rating = "MTKF" if "MTKF" in self.kink else "MCMB"
-        cT = self.cT(mach, h, rating, dT)
-
-        return delta * self.m_ref * self.aero.g0 * cT
+        return self.climb(tas, alt=alt, dT=dT)
 
     @ndarrayconvert(column=True)
     def idle(self, tas, alt=0, dT=0) -> float | ndarray:
@@ -390,8 +297,8 @@ class Thrust(base.ThrustBase):
         """
         h = alt * self.aero.ft
         v = tas * self.aero.kts
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
+        mach = self.aero.tas2mach(v, h)
+        delta = self.aero.pressure(h) / self.aero.p0
 
         cT = self.cT(mach, h, "LIDL", dT)
 
@@ -412,9 +319,8 @@ class FuelFlow(base.FuelFlowBase):
         """
         super().__init__(ac, **kwargs)
         self.ac = ac.upper()
-        self.smooth = kwargs.get("smooth", False)
-        self.thrust = Thrust(ac, bada_path, backend=self.backend, smooth=self.smooth)
-        self.drag = Drag(ac, bada_path, backend=self.backend, smooth=self.smooth)
+        self.thrust = Thrust(ac, bada_path)
+        self.drag = Drag(ac, bada_path)
 
         # load parameters from xml
         bxml = load_bada4(ac, bada_path)
@@ -443,7 +349,6 @@ class FuelFlow(base.FuelFlowBase):
             mass: Aircraft mass (kg).
             tas: Aircraft true airspeed (kt).
             alt: Aircraft altitude (ft).
-            dT: Temperature deviation (K). Defaults to 0.
 
         Returns:
             Fuel flow (kg/s).
@@ -452,16 +357,15 @@ class FuelFlow(base.FuelFlowBase):
 
         h = alt * self.aero.ft
         v = tas * self.aero.kts
-        dT = kwargs.get("dT", 0)
+        mach = self.aero.tas2mach(v, h)
+        delta = self.aero.pressure(h) / self.aero.p0
+        theta = self.aero.temperature(h) / self.aero.T0
 
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
-        theta = self.aero.temperature(h, dT=dT) / self.aero.T0
+        fi_matrix = self.sci.reshape(self.fi_, (3, 3))
+        delta_powers = self.sci.array([delta**i for i in range(3)]).reshape(3, -1)
+        mach_powers = self.sci.array([mach**i for i in range(3)]).reshape(3, -1)
 
-        delta_terms = [delta**i for i in range(3)]
-        mach_terms = [mach**i for i in range(3)]
-        cF_idle = _poly2(self.fi_, (3, 3), mach_terms, delta_terms)
-        cF_idle = cF_idle * delta**-1 * theta**-0.5
+        cF_idle = self.sci.einsum("ij,jk,ik->k", fi_matrix, delta_powers, mach_powers)
 
         fuel_flow = self._calc_fuel(mass, delta, theta, cF_idle)
 
@@ -476,7 +380,6 @@ class FuelFlow(base.FuelFlowBase):
             tas: Aircraft true airspeed (kt).
             alt: Aircraft altitude (ft).
             vs: Vertical rate (ft/min). Defaults to 0.
-            dT: Temperature deviation (K). Defaults to 0.
 
         Returns:
             Fuel flow (kg/s).
@@ -484,38 +387,26 @@ class FuelFlow(base.FuelFlowBase):
         """
         h = alt * self.aero.ft
         v = tas * self.aero.kts
-        dT = kwargs.get("dT", 0)
 
-        mach = self.aero.tas2mach(v, h, dT=dT)
-        delta = self.aero.pressure(h, dT=dT) / self.aero.p0
-        theta = self.aero.temperature(h, dT=dT) / self.aero.T0
-        gamma = self.backend.arctan2(vs * self.aero.fpm, v)
+        mach = self.aero.tas2mach(v, h)
+        delta = self.aero.pressure(h) / self.aero.p0
+        theta = self.aero.temperature(h) / self.aero.T0
+        gamma = self.sci.arctan2(vs * self.aero.fpm, v)
 
-        D = self.drag.clean(mass, tas, alt, vs, dT=dT)
-        T = D + mass * self.aero.g0 * self.backend.sin(gamma)
+        D = self.drag.clean(mass, tas, alt, vs)
+        T = D + mass * self.aero.g0 * self.sci.sin(gamma)
 
-        cT = T / (delta * self.mass_ref * self.aero.g0)
+        cT = T / (delta.reshape(-1, 1) * self.mass_ref * self.aero.g0)
 
-        cT_terms = [cT**i for i in range(5)]
-        mach_terms = [mach**i for i in range(5)]
-        cF_gen = _poly2(self.f_, (5, 5), mach_terms, cT_terms)
+        f_matrix = self.sci.reshape(self.f_, (5, 5))
+        cT_powers = self.sci.array([cT[:, 0] ** i for i in range(5)]).reshape(5, -1)
+        M_powers = self.sci.array([mach[:, 0] ** i for i in range(5)]).reshape(5, -1)
+
+        cF_gen = self.sci.einsum("ij,jk,ik->k", f_matrix, cT_powers, M_powers)
 
         fuel_flow_non_idle = self._calc_fuel(mass, delta, theta, cF_gen)
-        fuel_flow_idle = self.idle(mass, tas, alt, dT=dT)
+        fuel_flow_idle = self.idle(mass, tas, alt)
 
-        if self.smooth:
-            fuel_flow = self.backend.smooth_switch(
-                vs,
-                -250.0,
-                fuel_flow_idle,
-                fuel_flow_non_idle,
-                softness=10.0,
-            )
-        else:
-            fuel_flow = self.backend.where(
-                vs < -250,
-                fuel_flow_idle,
-                fuel_flow_non_idle,
-            )
+        fuel_flow = self.sci.where(vs < -250, fuel_flow_idle, fuel_flow_non_idle)
 
         return fuel_flow
